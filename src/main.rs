@@ -4,6 +4,7 @@ extern crate gfx_window_glutin;
 
 use gfx::traits::FactoryExt;
 use gfx::Device;
+use glutin::{Event, ElementState, VirtualKeyCode};
 
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
@@ -83,11 +84,12 @@ fn main() {
     loop {
         for event in window.poll_events() {
             match event {
-                glutin::Event::Closed => return,
-                glutin::Event::Resized(_width, _height) => {
+                Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Escape)) => return,
+                Event::Closed => return,
+                Event::Resized(_width, _height) => {
                     gfx_window_glutin::update_views(&window,&mut data.out, &mut main_depth);
                 },
-                _ => println!("event {:?}", event),
+                _ => println!("Unhandled event {:?}", event),
             }
         }
 
