@@ -1,10 +1,12 @@
 extern crate glutin;
 #[macro_use] extern crate gfx;
 extern crate gfx_window_glutin;
+extern crate cgmath;
 
 use gfx::traits::FactoryExt;
-use gfx::Device;
+use gfx::{Device, Factory, texture};
 use glutin::{Event, ElementState, VirtualKeyCode};
+use cgmath::{Matrix4, Point3, Vector3, Transform};
 
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
@@ -13,43 +15,81 @@ static VERTEX_SRC: &'static [u8] = b"
     #version 150 core
 
     in vec2 a_Pos;
-    in vec3 a_Color;
-    out vec4 v_Color;
+    in vec2 a_Uv;
+
+    uniform b_VsLocals {
+        mat4 u_Model;
+        mat4 u_View;
+        mat4 u_Proj;
+    };
+
+    out vec2 v_Uv;
 
     void main() {
-        v_Color = vec4(a_Color, 1.0);
-        gl_Position = vec4(a_Pos, 0.0, 1.0);
+        v_Uv = a_Uv;
+        gl_Position = u_Proj * u_View * u_Model * vec4(a_Pos, 0.0, 1.0);
     }
 ";
 
 static FRAGMENT_SRC: &'static [u8] = b"
     #version 150 core
 
-    in vec4 v_Color;
+    uniform sampler2D t_Tex;
+    in vec2 v_Uv;
+
     out vec4 Target0;
 
     void main() {
-        Target0 = v_Color;
+        vec3 color = texture(t_Tex, v_Uv).rgb;
+        Target0 = vec4(color, 1.0);
     }
 ";
 
 gfx_defines!{
-    vertex Vertex {
+    vertex Vertex{
         pos: [f32; 2] = "a_Pos",
-        color: [f32; 3] = "a_Color",
+        uv: [f32; 2] = "a_Uv",
+    }
+
+    constant ProjectionData {
+        model: [[f32; 4]; 4] = "u_Model",
+        view: [[f32; 4]; 4] = "u_View",
+        proj: [[f32; 4]; 4] = "u_Proj",
     }
 
     pipeline pipe {
         vbuf: gfx::VertexBuffer<Vertex> = (),
+        projection_cb: gfx::ConstantBuffer<ProjectionData> = "b_VsLocals",
+        tex: gfx::TextureSampler<[f32; 4]> = "t_Tex",
         out: gfx::RenderTarget<ColorFormat> = "Target0",
     }
 }
 
-const TRIANGLE: [Vertex; 3] = [
-    Vertex { pos: [ -0.5, -0.5 ], color: [1.0, 0.0, 0.0] },
-    Vertex { pos: [  0.5, -0.5 ], color: [0.0, 1.0, 0.0] },
-    Vertex { pos: [  0.0,  0.5 ], color: [0.0, 0.0, 1.0] }
+impl Vertex {
+    fn new(p: [f32; 2], u: [f32; 2]) -> Vertex {
+        Vertex {
+            pos: p,
+            uv: u,
+        }
+    }
+}
+
+// Larger red dots
+const L0_DATA: [[u8; 4]; 16] = [
+    [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ],
+    [ 0x00, 0x00, 0x00, 0x00 ], [ 0xc0, 0x00, 0x00, 0x00 ], [ 0xc0, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ],
+    [ 0x00, 0x00, 0x00, 0x00 ], [ 0xc0, 0x00, 0x00, 0x00 ], [ 0xc0, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ],
+    [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ], [ 0x00, 0x00, 0x00, 0x00 ],
 ];
+
+// Uniform green
+const L1_DATA: [[u8; 4]; 4] = [
+    [ 0x00, 0xc0, 0x00, 0x00 ], [ 0x00, 0xc0, 0x00, 0x00 ],
+    [ 0x00, 0xc0, 0x00, 0x00 ], [ 0x00, 0xc0, 0x00, 0x00 ],
+];
+
+// Uniform blue
+const L2_DATA: [[u8; 4]; 1] = [ [ 0x00, 0x00, 0xc0, 0x00 ] ];
 
 const CLEAR_COLOR: [f32; 4] = [0.1, 0.2, 0.3, 1.0];
 
@@ -74,11 +114,44 @@ fn main() {
         pipe::new()
     ).expect("Failed to compile shaders");
 
-    let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(&TRIANGLE, ());
+    let vertex_data = [
+            Vertex::new([ 0.0,  0.0], [ 0.0,  0.0]),
+            Vertex::new([ 1.0,  0.0], [50.0,  0.0]),
+            Vertex::new([ 1.0,  1.0], [50.0, 50.0]),
+
+            Vertex::new([ 1.0,  1.0], [ 0.0,  0.0]),
+            Vertex::new([ 0.0,  1.0], [ 0.0, 50.0]),
+            Vertex::new([ 0.0,  0.0], [50.0, 50.0]),
+    ];
+    let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(&vertex_data, ());
+
+    let (_, texture_view) = factory.create_texture_immutable::<ColorFormat>(
+            texture::Kind::D2(4, 4, texture::AaMode::Single),
+            &[&L0_DATA, &L1_DATA, &L2_DATA]
+            ).unwrap();
+
+        let sampler = factory.create_sampler(texture::SamplerInfo::new(
+            texture::FilterMethod::Trilinear,
+            texture::WrapMode::Tile,
+    ));
 
     let mut data = pipe::Data {
         vbuf: vertex_buffer,
+        projection_cb: factory.create_constant_buffer(1),
+        tex: (texture_view, sampler),
         out: main_color,
+    };
+
+    let view: Matrix4<f32> = Transform::look_at(
+        Point3::new(0.0, 0.0, 8.0),
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::unit_y(),
+    );
+
+    let project = ProjectionData {
+        model: Matrix4::one().into(),
+        view: view.into(),
+        proj: cgmath::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 8.0).into(),
     };
 
     loop {
@@ -87,13 +160,18 @@ fn main() {
                 Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Escape)) => return,
                 Event::Closed => return,
                 Event::Resized(_width, _height) => {
-                    gfx_window_glutin::update_views(&window,&mut data.out, &mut main_depth);
+                    println!("resized");
+                    println!("{:?} {:?}", _width, _height);
+                    gfx_window_glutin::update_views(&window, &mut data.out, &mut main_depth);
                 },
-                _ => println!("Unhandled event {:?}", event),
+                _ => (),
             }
         }
 
+        encoder.update_constant_buffer(&data.projection_cb, &project);
+
         encoder.clear(&data.out, CLEAR_COLOR);
+
         encoder.draw(&slice, &pso, &data);
         encoder.flush(&mut device);
         window.swap_buffers().unwrap();
