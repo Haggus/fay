@@ -115,13 +115,13 @@ fn main() {
     ).expect("Failed to compile shaders");
 
     let vertex_data = [
-            Vertex::new([ 0.0,  0.0], [ 0.0,  0.0]),
-            Vertex::new([ 1.0,  0.0], [50.0,  0.0]),
-            Vertex::new([ 1.0,  1.0], [50.0, 50.0]),
+        Vertex::new([ 0.0,  0.0], [ 0.0,  0.0]),
+        Vertex::new([ 1.0,  0.0], [50.0,  0.0]),
+        Vertex::new([ 1.0,  1.0], [50.0, 50.0]),
 
-            Vertex::new([ 1.0,  1.0], [ 0.0,  0.0]),
-            Vertex::new([ 0.0,  1.0], [ 0.0, 50.0]),
-            Vertex::new([ 0.0,  0.0], [50.0, 50.0]),
+        Vertex::new([ 1.0,  1.0], [ 0.0,  0.0]),
+        Vertex::new([ 0.0,  1.0], [ 0.0, 50.0]),
+        Vertex::new([ 0.0,  0.0], [50.0, 50.0]),
     ];
     let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(&vertex_data, ());
 
@@ -148,7 +148,7 @@ fn main() {
         Vector3::unit_y(),
     );
 
-    let project = ProjectionData {
+    let mut project = ProjectionData {
         model: Matrix4::one().into(),
         view: view.into(),
         proj: cgmath::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 8.0).into(),
@@ -160,8 +160,9 @@ fn main() {
                 Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Escape)) => return,
                 Event::Closed => return,
                 Event::Resized(_width, _height) => {
-                    println!("resized");
-                    println!("{:?} {:?}", _width, _height);
+                    let ratio = _width as f32 / _height as f32;
+                    project.proj = cgmath::ortho(-1.0 * ratio, 1.0 * ratio, -1.0, 1.0, -1.0, 8.0).into();
+
                     gfx_window_glutin::update_views(&window, &mut data.out, &mut main_depth);
                 },
                 _ => (),
